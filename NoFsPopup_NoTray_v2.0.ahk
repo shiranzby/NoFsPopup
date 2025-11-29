@@ -1,12 +1,13 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
+#NoTrayIcon                     ; 隐藏后台图标
 ProcessSetPriority "High"       ; 提高进程优先级，减少延迟
 
 ; ==============================================================================
-;  NoFsPopup v1.0
+;  NoFsPopup v2.0 (NoTrayIcon)
 ;  功能: 阻止 Chrome/Edge 全屏模式下鼠标触顶弹出的 "X" 提示条。
-;  原理: 当鼠标移动到屏幕最顶端 Y=0 时，自动将其限制在安全区域，避免触发弹窗。
-;  更新: v1.0 初始版本发布。
+;  原理: 当鼠标移动到屏幕最顶端 Y=0 时，自动将其限制在安全区域。
+;  更新: v2.0 移除边缘缓冲区，改为在边缘处自动下移 1px 以辅助跨屏。
 ; ==============================================================================
 
 ; --- DPI 感知设置 ---
@@ -27,7 +28,7 @@ ChromiumWindowClasses := ["Chrome_WidgetWin_1", "Chrome_WidgetWin_0"]
 ; ==============================================================================
 ;  初始化
 ; ==============================================================================
-SetTimer BlockTopEdgeInFullscreen, 5
+SetTimer BlockTopEdgeInFullscreen, 1
 OnExit( (*) => DllCall("ClipCursor", "Ptr", 0) )
 
 ; ==============================================================================
@@ -72,7 +73,7 @@ BlockTopEdgeInFullscreen() {
                         DllCall("Shcore\GetDpiForMonitor", "Ptr", hMonitor, "Int", 0, "UInt*", &dpiX, "UInt*", 0)
                     }
 
-                    ; --- 统一硬限制计算 (根据用户指定映射) ---
+                    ; --- 统一硬限制计算 ---
                     ; 250% (240 DPI) -> 8px
                     ; 200-225% (192-216 DPI) -> 7px
                     ; 175% (168 DPI) -> 6px
@@ -80,15 +81,15 @@ BlockTopEdgeInFullscreen() {
                     ; 100-125% (96-120 DPI) -> 4px
 
                     if (dpiX >= 240) {
-                        TopMargin := 8
+                        TopMargin := 9
                     } else if (dpiX >= 192) {
-                        TopMargin := 7
+                        TopMargin := 8
                     } else if (dpiX >= 168) {
-                        TopMargin := 6
+                        TopMargin := 7
                     } else if (dpiX >= 144) {
-                        TopMargin := 5
+                        TopMargin := 6
                     } else {
-                        TopMargin := 4
+                        TopMargin := 5
                     }
 
                     NumPut("UInt", 40, mi := Buffer(40))
@@ -104,9 +105,19 @@ BlockTopEdgeInFullscreen() {
 
                         ; 计算限制区域 (单一硬限制 + 无限延伸)
                         limitTop := monTop + TopMargin
+
+                        ; --- 边缘动态下压 (Dynamic Edge Slope) ---
+                        ; 在边缘 5px 范围内，将限制高度下压 2px。
+                        ; 这利用 ClipCursor 自身的特性将鼠标平滑推离死角，替代生硬的 SetCursorPos 震荡。
+                        if (mx <= monLeft + 4 || mx >= monRight - 5) {
+                            limitTop += 2
+                        }
+
                         limitLeft := monLeft - 50000
                         limitRight := monRight + 50000
                         limitBottom := monBottom + 50000
+
+                        ; (已移除旧的 SetCursorPos Nudge Logic)
 
                         ; 应用限制 (防抖)
                         if (!IsTrapped || NumGet(LastRect, 4, "Int") != limitTop) {
